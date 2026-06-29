@@ -100,6 +100,10 @@ python3 provision-bulk.py --use-attributes \
 
 # Marketplace image that needs plan/terms acceptance (e.g. Flatcar)
 python3 provision-bulk.py --image "kinvolk:flatcar-container-linux-free:stable-gen2:latest" --use-plan
+
+# Install VM extensions at launch (e.g. Azure Monitor Agent); injected into
+# computeProfile.extensions. The DCR association is a separate resource afterward.
+python3 provision-bulk.py --extensions extensions-ama.json
 ```
 
 ---
@@ -128,6 +132,8 @@ python3 provision-bulk.py --image "kinvolk:flatcar-container-linux-free:stable-g
 | `--arch` | `X64` | Architecture type (attribute mode) |
 | `--exclude-sizes` | — | Comma-separated SKUs to drop from the attribute basket (only with `--use-attributes`) |
 | `--no-custom-data` | off | Skip CustomData entirely (default: base64 `customdata-stamp.sh` next to the script) |
+| `--extensions` | — | Path to a JSON array of extensions injected at `computeProfile.extensions` (e.g. `extensions-ama.json` for AMA) |
+| `--compute-api-version` | `2024-07-01` | `computeApiVersion` stamped with extensions (only used with `--extensions`) |
 | `--poll-seconds` | `15` | Status poll interval |
 | `--max-polls` | `60` | Max poll iterations before giving up |
 

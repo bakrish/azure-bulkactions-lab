@@ -89,6 +89,11 @@ def main():
     ap.add_argument("--no-custom-data", action="store_true",
                     help="Skip CustomData entirely (default: base64 customdata-stamp.sh "
                          "next to this script, which stamps the WorkStart anchor).")
+    ap.add_argument("--extensions", default=None,
+                    help="Path to a JSON file: an array of extension objects (or {'extensions':[...]}) "
+                         "injected at computeProfile.extensions, e.g. extensions-ama.json for AMA.")
+    ap.add_argument("--compute-api-version", default="2024-07-01",
+                    help="computeApiVersion stamped alongside extensions (only used with --extensions).")
     a = ap.parse_args()
 
     # --- Image: Marketplace URN OR a full image resource ID -----------------
@@ -215,6 +220,19 @@ def main():
     if custom_data_b64:
         body["properties"]["computeProfile"]["virtualMachineProfile"]["osProfile"]["customData"] = custom_data_b64
 
+    # Optional extensions: computeProfile.extensions is a VMSS-style array, a
+    # sibling of virtualMachineProfile. AMA installs at launch this way (the DCR
+    # association is a separate resource). computeApiVersion pins the handler schema.
+    if a.extensions:
+        with open(a.extensions, "r", encoding="utf-8") as fh:
+            ext = json.load(fh)
+        ext_list = ext.get("extensions") if isinstance(ext, dict) else ext
+        if not isinstance(ext_list, list) or not ext_list:
+            raise SystemExit("--extensions file must be a non-empty JSON array (or {'extensions':[...]}).")
+        cp = body["properties"]["computeProfile"]
+        cp["extensions"] = ext_list
+        cp["computeApiVersion"] = a.compute_api_version
+
     # Attribute-based selection: describe the VM shape instead of pinning a SKU.
     # vmAttributes is a sibling of vmSizesProfile under properties and is mutually
     # exclusive with it -- so drop vmSizesProfile when --use-attributes is set.
@@ -308,7 +326,8 @@ def main():
                     "--query", "[].{name:name, power:powerState, ip:privateIps}", "-o", "table"])
 
     print(f"\nbulk operationId: {operation_id}")
-    print(f"Measure:  python3 measure-bulk.py --operation-id {operation_id} --with-guest")
+    rg_arg = f" -g {a.resource_group}" if a.resource_group != ap.get_default("resource_group") else ""
+    print(f"Measure:  python3 measure-bulk.py --operation-id {operation_id}{rg_arg} --with-guest")
     print(f"Cleanup:  az group delete -n {a.resource_group} --yes --no-wait")
 
 

@@ -1,0 +1,14 @@
+[
+  {
+    "name": "AzureMonitorLinuxAgent",
+    "properties": {
+      "publisher": "Microsoft.Azure.Monitor",
+      "type": "AzureMonitorLinuxAgent",
+      "typeHandlerVersion": "1.0",
+      "autoUpgradeMinorVersion": true,
+      "enableAutomaticUpgrade": true,
+      "settings": {},
+      "protectedSettings": {}
+    }
+  }
+]
