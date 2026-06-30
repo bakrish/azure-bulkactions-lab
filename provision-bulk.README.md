@@ -104,6 +104,13 @@ python3 provision-bulk.py --image "kinvolk:flatcar-container-linux-free:stable-g
 # Install VM extensions at launch (e.g. Azure Monitor Agent); injected into
 # computeProfile.extensions. The DCR association is a separate resource afterward.
 python3 provision-bulk.py --extensions extensions-ama.json
+
+# Attach a user-assigned managed identity to EVERY launched VM (pre-grant its RBAC first)
+python3 provision-bulk.py \
+    --user-assigned-identity "/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.ManagedIdentity/userAssignedIdentities/<name>"
+
+# Force the NVMe disk controller (e.g. a v6 SKU that defaults to SCSI)
+python3 provision-bulk.py --size Standard_D2as_v6 --disk-controller-type NVMe
 ```
 
 ---
@@ -117,6 +124,8 @@ python3 provision-bulk.py --extensions extensions-ama.json
 | `--size` | `Standard_D2ads_v5` | Single pinned SKU |
 | `--sizes` | — | Comma-separated explicit SKUs for a multi-size pinned basket (overrides `--size`; ignored with `--use-attributes`) |
 | `--os-disk-size-gb` | `0` | `0` = image default; otherwise **expand** to this size (cannot shrink below the image's native size) |
+| `--disk-controller-type` | — | VM-wide disk controller `SCSI` / `NVMe` (OS + data share it). Omit to take the SKU default (v5 = SCSI-only; v6 defaults SCSI, pass `NVMe` to force it; v7 = NVMe-native). Requires the image definition to advertise the value, NVMe drivers in the initramfs, and Gen2 |
+| `--user-assigned-identity` | — | Full resource id of a user-assigned managed identity attached to **every** launched VM (stamped as the top-level `identity`). Pre-grant its RBAC before launch — system-assigned identities are per-VM and can't be pre-authorized, so they're unsuitable for ephemeral fleets |
 | `--resource-prefix` | `vmbulk` | computerName prefix (truncated to 11 chars so the RP can append a suffix) |
 | `-g`, `--resource-group` | `rg-test` | Disposable RG that holds only the VMs |
 | `--infra-resource-group` | `rg-infra` | Persistent RG holding vnet/subnet/jump |
