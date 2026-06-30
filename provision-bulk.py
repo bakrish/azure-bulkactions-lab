@@ -66,6 +66,13 @@ def main():
                          "(overrides --size; ignored when --use-attributes).")
     ap.add_argument("--os-disk-size-gb", type=int, default=0,
                     help="0 = image default; else EXPAND to this (cannot shrink below image size).")
+    ap.add_argument("--disk-controller-type", choices=["SCSI", "NVMe"], default=None,
+                    help="VM-wide disk controller (OS+data share it). Omit = let the SKU default "
+                         "(v5=SCSI-only; v6=defaults SCSI, pass NVMe to force it; v7=NVMe-native). "
+                         "Requires the image def to advertise the value + nvme drivers in initramfs + Gen2.")
+    ap.add_argument("--user-assigned-identity", default=None,
+                    help="Resource id of a user-assigned managed identity to attach to every launched VM "
+                         "(pre-grant its RBAC before launch; system-assigned is unsuitable for ephemeral cattle).")
     ap.add_argument("--resource-prefix", default="vmbulk")
     ap.add_argument("-g", "--resource-group", default="rg-test", help="disposable: holds only the VMs")
     ap.add_argument("--infra-resource-group", default="rg-infra", help="persistent: vnet/subnet/jump")
@@ -216,6 +223,11 @@ def main():
     if a.os_disk_size_gb > 0:
         body["properties"]["computeProfile"]["virtualMachineProfile"]["storageProfile"]["osDisk"]["diskSizeGB"] = a.os_disk_size_gb
 
+    # Optional disk controller: VM-wide (OS+data share it). Sits on storageProfile,
+    # a sibling of imageReference/osDisk. Omit to let the SKU default (v6 -> SCSI).
+    if a.disk_controller_type:
+        body["properties"]["computeProfile"]["virtualMachineProfile"]["storageProfile"]["diskControllerType"] = a.disk_controller_type
+
     # Optional CustomData: attach only when not skipped (default: WorkStart stamp).
     if custom_data_b64:
         body["properties"]["computeProfile"]["virtualMachineProfile"]["osProfile"]["customData"] = custom_data_b64
@@ -256,6 +268,15 @@ def main():
         print(f"Accepting Marketplace terms for {a.image} ...")
         az(["vm", "image", "terms", "accept", "--urn", a.image, "-o", "none"])
         body["plan"] = plan_ref
+
+    # Optional user-assigned managed identity: a top-level 'identity' sibling of
+    # 'properties' (VMSS/Fleet contract -- NOT inside computeProfile). Propagates
+    # to every VM the bulk op creates; pre-grant its RBAC before launch.
+    if a.user_assigned_identity:
+        body["identity"] = {
+            "type": "UserAssigned",
+            "userAssignedIdentities": {a.user_assigned_identity: {}},
+        }
 
     tmp = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8")
     try:
