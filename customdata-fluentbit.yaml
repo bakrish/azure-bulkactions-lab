@@ -1,0 +1,84 @@
+#cloud-config
+# =====================================================================
+# Fluent Bit -> ADX log shipper -- PROVISION-TIME configuration.
+#
+# Pairs with the rhel9opt-nvme image, which ships the Fluent Bit BINARY
+# only (service left disabled). This customData supplies the CONFIG the
+# image deliberately omits, so ONE generic image serves every environment.
+#
+# TWO kinds of tokens:
+#   (1) Fill BEFORE launch -- environment-specific, static per fleet:
+#         __ADX_INGESTION_ENDPOINT__  https://ingest-<cluster>.<region>.kusto.windows.net
+#         __ADX_DATABASE__            target ADX database
+#         __ADX_TABLE__               target ADX table (pre-created)
+#         __ADX_MI_CLIENT_ID__        client-id of the UAMI attached at launch
+#                                     (provision-bulk --user-assigned-identity);
+#                                     grant it 'Database Ingestor' on the DB.
+#         __FB_LOG_PATHS__            tail glob(s), e.g. /var/log/messages,/var/log/secure
+#   (2) Resolved AUTOMATICALLY at first boot -- leave as-is:
+#         __HOSTNAME__                runcmd sed-substitutes $(hostname) per VM,
+#                                     so logs land at log.hostname in ADX.
+#
+# NON-SECRET ONLY: customData is not encrypted in the VM model. ADX auth is
+# secret-less -- azure_kusto pulls an IMDS token via the attached user-assigned MI.
+#
+# NOTE: customData is a SINGLE field. This file replaces (does not co-exist with)
+# customdata-stamp.sh -- so it ALSO emits the measure-bulk WorkStart anchor itself
+# (first runcmd entry below), keeping WorkStart/WorkT0 measurements intact. (To keep
+# the two as separate artifacts instead, combine via a MIME multipart archive.)
+# =====================================================================
+write_files:
+  - path: /etc/fluent-bit/fluent-bit.conf
+    permissions: '0644'
+    owner: root:root
+    content: |
+      [SERVICE]
+          Flush          5
+          Log_Level      info
+          storage.path   /var/log/fluent-bit/buffer
+          scheduler.base 5
+          scheduler.cap  30
+      [INPUT]
+          Name           tail
+          Path           __FB_LOG_PATHS__
+          Tag            host.*
+          # Read from byte 0 on first discovery so a late FB start still ships the
+          # full pre-start boot history (completeness independent of start time).
+          Read_from_Head On
+          # Stamp each record with its source file path -> lands at log.filename
+          # (dynamic column, no ADX schema change).
+          Path_Key       filename
+          # Per-file byte offset persists here: restarts RESUME, not re-ship.
+          DB             /var/log/fluent-bit/tail.db
+          storage.type   filesystem
+      [FILTER]
+          # Per-host attribution. __HOSTNAME__ is replaced with the live hostname
+          # at first boot (runcmd sed, below) -> lands at log.hostname in ADX.
+          Name           record_modifier
+          Match          *
+          Record         hostname __HOSTNAME__
+      [OUTPUT]
+          # Secret-less ADX ingestion: azure_kusto pulls an IMDS token via the
+          # attached user-assigned MI (client_id below).
+          Name                     azure_kusto
+          Match                    *
+          ingestion_endpoint       __ADX_INGESTION_ENDPOINT__
+          database_name            __ADX_DATABASE__
+          table_name               __ADX_TABLE__
+          auth_type                managed_identity
+          client_id                __ADX_MI_CLIENT_ID__
+          Retry_Limit              False
+          storage.total_limit_size 5G
+
+runcmd:
+  # 0) WorkStart anchor: stamp the instant user-data begins -- measure-bulk.py reads
+  #    /var/lib/customdata-start.stamp back as WorkStart/WorkT0. Mirrors what the
+  #    standalone customdata-stamp.sh did, so measurements survive the swap.
+  - date +%s.%N > /var/lib/customdata-start.stamp
+  # 1) Ensure the buffer/DB directory exists (conf references it).
+  - mkdir -p /var/log/fluent-bit/buffer
+  # 2) Resolve the per-VM hostname NOW (cloud-init has already set it) and bake it
+  #    into the conf -- no runtime env var, no ExecStart wrapper needed.
+  - sed -i "s|__HOSTNAME__|$(hostname)|g" /etc/fluent-bit/fluent-bit.conf
+  # 3) Start shipping (Read_from_Head On backfills anything already written).
+  - systemctl enable --now fluent-bit

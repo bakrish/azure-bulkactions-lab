@@ -96,6 +96,11 @@ def main():
     ap.add_argument("--no-custom-data", action="store_true",
                     help="Skip CustomData entirely (default: base64 customdata-stamp.sh "
                          "next to this script, which stamps the WorkStart anchor).")
+    ap.add_argument("--custom-data", default=None,
+                    help="Path to a CustomData file to base64 and attach (e.g. "
+                         "customdata-fluentbit.yaml to provision the Fluent Bit config). "
+                         "Default: customdata-stamp.sh next to this script. Ignored if "
+                         "--no-custom-data is set.")
     ap.add_argument("--extensions", default=None,
                     help="Path to a JSON file: an array of extension objects (or {'extensions':[...]}) "
                          "injected at computeProfile.extensions, e.g. extensions-ama.json for AMA.")
@@ -125,15 +130,21 @@ def main():
         pub_key = fh.read().strip()
 
     # --- CustomData (LF-normalized, base64) ---------------------------------
-    # Optional: default is to stamp customdata-stamp.sh (next to this script),
-    # which measure-bulk.py reads back as the WorkStart anchor. --no-custom-data
-    # launches a bare image with no user-data.
+    # Optional. Default: customdata-stamp.sh (next to this script), which
+    # measure-bulk.py reads back as the WorkStart anchor. --custom-data <path>
+    # substitutes a different file (e.g. customdata-fluentbit.yaml to provision the
+    # Fluent Bit config). --no-custom-data launches a bare image with no user-data.
     custom_data_b64 = None
     if not a.no_custom_data:
-        cd_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "customdata-stamp.sh")
+        if a.custom_data:
+            cd_path = a.custom_data
+            missing = f"CustomData file not found: {cd_path}"
+        else:
+            cd_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "customdata-stamp.sh")
+            missing = ("customdata-stamp.sh not found next to this script "
+                       "(pass --custom-data <path>, or --no-custom-data to skip it).")
         if not os.path.isfile(cd_path):
-            raise SystemExit("customdata-stamp.sh not found next to this script "
-                             "(or pass --no-custom-data to skip it).")
+            raise SystemExit(missing)
         with open(cd_path, "r", newline="") as fh:
             cd_body = fh.read().replace("\r\n", "\n")
         custom_data_b64 = base64.b64encode(cd_body.encode("utf-8")).decode("ascii")

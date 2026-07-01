@@ -46,7 +46,7 @@ or AAD library in play — `az` owns every token. On a jump host this means `az 
 | `az` CLI, logged in | `az login`, or `az login --identity` on a managed-identity jump host (needs at least Contributor on the target RG / Reader on the sub) |
 | RP registered | `az provider register --namespace Microsoft.ComputeBulkActions` |
 | Existing SSH public key | default `~/.ssh/id_rsa.pub`; generate with `ssh-keygen -t rsa -b 4096` |
-| A CustomData payload next to the script | optional; ships an example `customdata-stamp.sh`, or pass `--no-custom-data` to launch without it |
+| A CustomData payload next to the script | optional; defaults to the bundled `customdata-stamp.sh`, or point `--custom-data` at another file (e.g. `customdata-fluentbit.yaml`), or pass `--no-custom-data` to launch without it |
 | Existing vnet/subnet | the VMs deploy into an existing subnet — pass `--vnet` / `--subnet` / `--infra-resource-group` for yours |
 
 ### CustomData (optional)
@@ -62,6 +62,12 @@ date +%s.%N > /var/lib/customdata-start.stamp
 ```
 
 Pass `--no-custom-data` to launch a bare image with no user-data at all.
+
+To attach a **different** payload without renaming files, pass `--custom-data <path>` — e.g.
+`--custom-data customdata-fluentbit.yaml`, a cloud-config bundled here that writes a Fluent Bit
+config, resolves the per-VM hostname at first boot, and starts shipping logs to Azure Data
+Explorer (the image is expected to already ship the Fluent Bit binary). `--custom-data` is
+ignored when `--no-custom-data` is set.
 
 ---
 
@@ -111,6 +117,10 @@ python3 provision-bulk.py \
 
 # Force the NVMe disk controller (e.g. a v6 SKU that defaults to SCSI)
 python3 provision-bulk.py --size Standard_D2as_v6 --disk-controller-type NVMe
+
+# Attach an alternate CustomData payload (e.g. Fluent Bit -> ADX log shipping)
+python3 provision-bulk.py --custom-data customdata-fluentbit.yaml \
+    --user-assigned-identity "/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.ManagedIdentity/userAssignedIdentities/<name>"
 ```
 
 ---
@@ -141,6 +151,7 @@ python3 provision-bulk.py --size Standard_D2as_v6 --disk-controller-type NVMe
 | `--arch` | `X64` | Architecture type (attribute mode) |
 | `--exclude-sizes` | — | Comma-separated SKUs to drop from the attribute basket (only with `--use-attributes`) |
 | `--no-custom-data` | off | Skip CustomData entirely (default: base64 `customdata-stamp.sh` next to the script) |
+| `--custom-data` | — | Path to an alternate CustomData file to base64 and attach (e.g. `customdata-fluentbit.yaml`). Default: `customdata-stamp.sh` next to the script. Ignored with `--no-custom-data` |
 | `--extensions` | — | Path to a JSON array of extensions injected at `computeProfile.extensions` (e.g. `extensions-ama.json` for AMA) |
 | `--compute-api-version` | `2024-07-01` | `computeApiVersion` stamped with extensions (only used with `--extensions`) |
 | `--poll-seconds` | `15` | Status poll interval |
