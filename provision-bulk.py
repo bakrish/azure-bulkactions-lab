@@ -73,6 +73,11 @@ def main():
     ap.add_argument("--user-assigned-identity", default=None,
                     help="Resource id of a user-assigned managed identity to attach to every launched VM "
                          "(pre-grant its RBAC before launch; system-assigned is unsuitable for ephemeral cattle).")
+    ap.add_argument("--boot-diagnostics", action="store_true",
+                    help="Enable managed boot diagnostics on every launched VM so the FIRST (cold-provision) "
+                         "boot's serial console log is captured -- the only artifact that timestamps the "
+                         "pre-kernel window (firmware -> GRUB -> kernel). Read it with "
+                         "'az vm boot-diagnostics get-boot-log'. A reboot cannot reproduce these conditions.")
     ap.add_argument("--resource-prefix", default="vmbulk")
     ap.add_argument("-g", "--resource-group", default="rg-test", help="disposable: holds only the VMs")
     ap.add_argument("--infra-resource-group", default="rg-infra", help="persistent: vnet/subnet/jump")
@@ -242,6 +247,15 @@ def main():
     # Optional CustomData: attach only when not skipped (default: WorkStart stamp).
     if custom_data_b64:
         body["properties"]["computeProfile"]["virtualMachineProfile"]["osProfile"]["customData"] = custom_data_b64
+
+    # Optional boot diagnostics: managed (no storageUri -> Azure-managed storage).
+    # Sits on virtualMachineProfile as a sibling of storageProfile/osProfile. Off
+    # by default. Enabling it captures the fresh-provision serial console, the one
+    # artifact that reveals the pre-kernel (firmware/GRUB/kernel-load) window.
+    if a.boot_diagnostics:
+        body["properties"]["computeProfile"]["virtualMachineProfile"]["diagnosticsProfile"] = {
+            "bootDiagnostics": {"enabled": True}
+        }
 
     # Optional extensions: computeProfile.extensions is a VMSS-style array, a
     # sibling of virtualMachineProfile. AMA installs at launch this way (the DCR

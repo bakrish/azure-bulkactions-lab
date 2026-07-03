@@ -118,6 +118,12 @@ python3 provision-bulk.py \
 # Force the NVMe disk controller (e.g. a v6 SKU that defaults to SCSI)
 python3 provision-bulk.py --size Standard_D2as_v6 --disk-controller-type NVMe
 
+# Capture the FIRST (cold-provision) boot's serial console for pre-kernel latency
+# analysis. A reboot cannot reproduce fresh-provision conditions (allocation +
+# OS-disk hydration from the image), so enable this AT LAUNCH:
+python3 provision-bulk.py --boot-diagnostics --count 1
+#   then: az vm boot-diagnostics get-boot-log -g <rg> -n <vm>
+
 # Attach an alternate CustomData payload (e.g. Fluent Bit -> ADX log shipping)
 python3 provision-bulk.py --custom-data customdata-fluentbit.yaml \
     --user-assigned-identity "/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.ManagedIdentity/userAssignedIdentities/<name>"
@@ -136,6 +142,7 @@ python3 provision-bulk.py --custom-data customdata-fluentbit.yaml \
 | `--os-disk-size-gb` | `0` | `0` = image default; otherwise **expand** to this size (cannot shrink below the image's native size) |
 | `--disk-controller-type` | — | VM-wide disk controller `SCSI` / `NVMe` (OS + data share it). Omit to take the SKU default (v5 = SCSI-only; v6 defaults SCSI, pass `NVMe` to force it; v7 = NVMe-native). Requires the image definition to advertise the value, NVMe drivers in the initramfs, and Gen2 |
 | `--user-assigned-identity` | — | Full resource id of a user-assigned managed identity attached to **every** launched VM (stamped as the top-level `identity`). Pre-grant its RBAC before launch — system-assigned identities are per-VM and can't be pre-authorized, so they're unsuitable for ephemeral fleets |
+| `--boot-diagnostics` | off | Enable **managed** boot diagnostics on every launched VM (stamped as `diagnosticsProfile.bootDiagnostics.enabled`). Captures the **first (cold-provision) boot's** serial console log — the only artifact that timestamps the pre-kernel window (firmware → GRUB → kernel-load). Read it with `az vm boot-diagnostics get-boot-log`. A reboot can't reproduce fresh-provision conditions (allocation + OS-disk hydration), so enable it at launch |
 | `--resource-prefix` | `vmbulk` | computerName prefix (truncated to 11 chars so the RP can append a suffix) |
 | `-g`, `--resource-group` | `rg-test` | Disposable RG that holds only the VMs |
 | `--infra-resource-group` | `rg-infra` | Persistent RG holding vnet/subnet/jump |
