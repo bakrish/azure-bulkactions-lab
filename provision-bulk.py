@@ -78,6 +78,12 @@ def main():
                          "boot's serial console log is captured -- the only artifact that timestamps the "
                          "pre-kernel window (firmware -> GRUB -> kernel). Read it with "
                          "'az vm boot-diagnostics get-boot-log'. A reboot cannot reproduce these conditions.")
+    ap.add_argument("--accelerated-networking", action="store_true",
+                    help="Enable Accelerated Networking (SR-IOV) on every launched VM's NIC. OFF by default "
+                         "(the API default is off). Requires a supported size: 4+ vCPUs on hyperthreaded "
+                         "families (e.g. Standard_D4ads_v5; the 2-vCPU Standard_D2ads_v5 default does NOT "
+                         "support it), and an image with the SR-IOV drivers (mlx4/mlx5/MANA). Verify traffic "
+                         "actually rides the VF with 'ethtool -S eth0 | grep vf_tx_packets'.")
     ap.add_argument("--resource-prefix", default="vmbulk")
     ap.add_argument("-g", "--resource-group", default="rg-test", help="disposable: holds only the VMs")
     ap.add_argument("--infra-resource-group", default="rg-infra", help="persistent: vnet/subnet/jump")
@@ -256,6 +262,15 @@ def main():
         body["properties"]["computeProfile"]["virtualMachineProfile"]["diagnosticsProfile"] = {
             "bootDiagnostics": {"enabled": True}
         }
+
+    # Optional Accelerated Networking (SR-IOV): a per-NIC property on each
+    # networkInterfaceConfiguration.properties. Off by default (API default). The
+    # SKU must support it (4+ vCPUs on hyperthreaded families -- the D2ads_v5
+    # default does NOT) and the image must carry the mlx4/mlx5/MANA drivers, or
+    # the launch is rejected.
+    if a.accelerated_networking:
+        for nic in body["properties"]["computeProfile"]["virtualMachineProfile"]["networkProfile"]["networkInterfaceConfigurations"]:
+            nic["properties"]["enableAcceleratedNetworking"] = True
 
     # Optional extensions: computeProfile.extensions is a VMSS-style array, a
     # sibling of virtualMachineProfile. AMA installs at launch this way (the DCR

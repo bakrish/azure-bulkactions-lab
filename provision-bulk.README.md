@@ -124,6 +124,11 @@ python3 provision-bulk.py --size Standard_D2as_v6 --disk-controller-type NVMe
 python3 provision-bulk.py --boot-diagnostics --count 1
 #   then: az vm boot-diagnostics get-boot-log -g <rg> -n <vm>
 
+# Enable Accelerated Networking (SR-IOV). Needs a 4+ vCPU size (the default
+# D2ads_v5 does NOT support it) + SR-IOV drivers in the image:
+python3 provision-bulk.py --accelerated-networking --size Standard_D4ads_v5
+#   verify on the VM: ethtool -S eth0 | grep vf_tx_packets   (should climb)
+
 # Attach an alternate CustomData payload (e.g. Fluent Bit -> ADX log shipping)
 python3 provision-bulk.py --custom-data customdata-fluentbit.yaml \
     --user-assigned-identity "/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.ManagedIdentity/userAssignedIdentities/<name>"
@@ -143,6 +148,7 @@ python3 provision-bulk.py --custom-data customdata-fluentbit.yaml \
 | `--disk-controller-type` | — | VM-wide disk controller `SCSI` / `NVMe` (OS + data share it). Omit to take the SKU default (v5 = SCSI-only; v6 defaults SCSI, pass `NVMe` to force it; v7 = NVMe-native). Requires the image definition to advertise the value, NVMe drivers in the initramfs, and Gen2 |
 | `--user-assigned-identity` | — | Full resource id of a user-assigned managed identity attached to **every** launched VM (stamped as the top-level `identity`). Pre-grant its RBAC before launch — system-assigned identities are per-VM and can't be pre-authorized, so they're unsuitable for ephemeral fleets |
 | `--boot-diagnostics` | off | Enable **managed** boot diagnostics on every launched VM (stamped as `diagnosticsProfile.bootDiagnostics.enabled`). Captures the **first (cold-provision) boot's** serial console log — the only artifact that timestamps the pre-kernel window (firmware → GRUB → kernel-load). Read it with `az vm boot-diagnostics get-boot-log`. A reboot can't reproduce fresh-provision conditions (allocation + OS-disk hydration), so enable it at launch |
+| `--accelerated-networking` | off | Enable Accelerated Networking / SR-IOV on every launched VM's NIC (stamped as `enableAcceleratedNetworking` per NIC config). **Off by default** (the API default). Requires a **supported size** — 4+ vCPUs on hyperthreaded families (e.g. `Standard_D4ads_v5`; the default 2-vCPU `Standard_D2ads_v5` does **not** support it) — and an image carrying the SR-IOV drivers (mlx4/mlx5/MANA), or the launch is rejected. Verify traffic rides the VF with `ethtool -S eth0 \| grep vf_tx_packets` |
 | `--resource-prefix` | `vmbulk` | computerName prefix (truncated to 11 chars so the RP can append a suffix) |
 | `-g`, `--resource-group` | `rg-test` | Disposable RG that holds only the VMs |
 | `--infra-resource-group` | `rg-infra` | Persistent RG holding vnet/subnet/jump |
