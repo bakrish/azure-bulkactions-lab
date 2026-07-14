@@ -129,6 +129,14 @@ python3 provision-bulk.py --boot-diagnostics --count 1
 python3 provision-bulk.py --accelerated-networking --size Standard_D4ads_v5
 #   verify on the VM: ethtool -S eth0 | grep vf_tx_packets   (should climb)
 
+# Pin the launch to a single Availability Zone (best-effort: spills to other zones
+# only if that zone is capacity-short) -- e.g. to co-locate with a workload in zone 1:
+python3 provision-bulk.py --zones 1 --zone-strategy BestEffortSingleZone
+
+# Spread evenly across zones, or fill a preferred zone first then spill:
+python3 provision-bulk.py --zones 1,2,3 --zone-strategy StrictBalanced
+python3 provision-bulk.py --zones 1,2,3 --zone-strategy Prioritized --zone-preferences 1:0,2:1,3:2
+
 # Attach an alternate CustomData payload (e.g. Fluent Bit -> ADX log shipping)
 python3 provision-bulk.py --custom-data customdata-fluentbit.yaml \
     --user-assigned-identity "/subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.ManagedIdentity/userAssignedIdentities/<name>"
@@ -163,6 +171,9 @@ python3 provision-bulk.py --custom-data customdata-fluentbit.yaml \
 | `--min-mem-gib` / `--max-mem-gib` | `4` / `16` | Memory range in GiB (attribute mode) |
 | `--arch` | `X64` | Architecture type (attribute mode) |
 | `--exclude-sizes` | — | Comma-separated SKUs to drop from the attribute basket (only with `--use-attributes`) |
+| `--zones` | — | Comma-separated Availability Zones the launch may use (e.g. `1` or `1,2,3`), stamped as the top-level `zones` array. Omit = zone-agnostic (regional) placement. Pair with `--zone-strategy` |
+| `--zone-strategy` | — | Zone distribution (`properties.zoneAllocationPolicy.distributionStrategy`): `BestEffortSingleZone` (one zone, spill only if capacity-short — the co-location vs Spot-fill compromise), `Prioritized` (fill higher-ranked zones first; needs `--zone-preferences`), `BestEffortBalanced` / `StrictBalanced` (spread across zones). All are best-effort against Spot capacity |
+| `--zone-preferences` | — | For `--zone-strategy Prioritized`: comma-separated `zone:rank` pairs, lower rank = higher priority (e.g. `1:0,2:1,3:2`) |
 | `--no-custom-data` | off | Skip CustomData entirely (default: base64 `customdata-stamp.sh` next to the script) |
 | `--custom-data` | — | Path to an alternate CustomData file to base64 and attach (e.g. `customdata-fluentbit.yaml`). Default: `customdata-stamp.sh` next to the script. Ignored with `--no-custom-data` |
 | `--extensions` | — | Path to a JSON array of extensions injected at `computeProfile.extensions` (e.g. `extensions-ama.json` for AMA) |

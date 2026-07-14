@@ -23,6 +23,7 @@ Examples:
   python3 provision-bulk.py --size Standard_D4ads_v5 --count 25
   python3 provision-bulk.py --image "kinvolk:flatcar-container-linux-free:stable-gen2:latest" --use-plan
   python3 provision-bulk.py --use-attributes --min-vcpu 2 --max-vcpu 4 --min-mem-gib 4 --max-mem-gib 16
+  python3 provision-bulk.py --zones 1 --zone-strategy BestEffortSingleZone --count 25
 
 PREVIEW: requires Microsoft.ComputeBulkActions registered on the subscription
 (az provider register --namespace Microsoft.ComputeBulkActions).
@@ -102,6 +103,19 @@ def main():
     ap.add_argument("--exclude-sizes", default=None,
                     help="Comma-separated SKUs to exclude from an attribute-based basket "
                          "(only applies with --use-attributes).")
+    ap.add_argument("--zones", default=None,
+                    help="Comma-separated Availability Zones the launch may use (e.g. '1' or '1,2,3'). "
+                         "Injected as the top-level 'zones' array. Omit = zone-agnostic (regional) "
+                         "placement. Pair with --zone-strategy to control distribution across them.")
+    ap.add_argument("--zone-strategy", default=None,
+                    choices=["BestEffortSingleZone", "Prioritized", "BestEffortBalanced", "StrictBalanced"],
+                    help="Zone distribution strategy (properties.zoneAllocationPolicy.distributionStrategy). "
+                         "BestEffortSingleZone = one zone, spill to others only if capacity is short (the "
+                         "co-location vs Spot-fill compromise); Prioritized = fill higher-ranked zones first "
+                         "(needs --zone-preferences); BestEffortBalanced / StrictBalanced = spread across zones.")
+    ap.add_argument("--zone-preferences", default=None,
+                    help="For --zone-strategy Prioritized: comma-separated zone:rank pairs, lower rank = "
+                         "higher priority (e.g. '1:0,2:1,3:2'). Required when strategy is Prioritized.")
     ap.add_argument("--poll-seconds", type=int, default=15)
     ap.add_argument("--max-polls", type=int, default=60)
     ap.add_argument("--no-custom-data", action="store_true",
@@ -317,6 +331,34 @@ def main():
             "type": "UserAssigned",
             "userAssignedIdentities": {a.user_assigned_identity: {}},
         }
+
+    # Optional zone placement. 'zones' is a top-level array (sibling of 'properties'/
+    # 'identity'/'plan') listing the eligible Availability Zones. zoneAllocationPolicy
+    # (under properties, sibling of computeProfile) controls HOW instances distribute
+    # across them. Omit both for zone-agnostic (regional) placement. All strategies are
+    # best-effort against Spot capacity: a single-zone pin can still spill/under-fill.
+    if a.zones:
+        body["zones"] = [z.strip() for z in a.zones.split(",") if z.strip()]
+    if a.zone_strategy:
+        zap = {"distributionStrategy": a.zone_strategy}
+        if a.zone_strategy == "Prioritized":
+            if not a.zone_preferences:
+                raise SystemExit("--zone-strategy Prioritized requires --zone-preferences "
+                                 "(comma-separated zone:rank pairs, e.g. '1:0,2:1').")
+            prefs = []
+            for pair in a.zone_preferences.split(","):
+                pair = pair.strip()
+                if not pair:
+                    continue
+                z, _, r = pair.partition(":")
+                pref = {"zone": z.strip()}
+                if r.strip():
+                    pref["rank"] = int(r.strip())
+                prefs.append(pref)
+            zap["zonePreferences"] = prefs
+        body["properties"]["zoneAllocationPolicy"] = zap
+    elif a.zone_preferences:
+        raise SystemExit("--zone-preferences only applies with --zone-strategy Prioritized.")
 
     tmp = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8")
     try:
