@@ -103,6 +103,12 @@ def main():
     ap.add_argument("--exclude-sizes", default=None,
                     help="Comma-separated SKUs to exclude from an attribute-based basket "
                          "(only applies with --use-attributes).")
+    ap.add_argument("--hyperv-generations", default=None,
+                    help="Comma-separated Hyper-V generations to filter the attribute-based basket to "
+                         "(Gen1 and/or Gen2), e.g. 'Gen2' to select Gen2-capable SKUs exclusively. "
+                         "Injected at vmAttributes.hyperVGenerations; only applies with --use-attributes. "
+                         "NOTE: this filters SKUs to those that SUPPORT the generation -- the generation "
+                         "actually booted is set by the image, so pair 'Gen2' with a Gen2 image.")
     ap.add_argument("--zones", default=None,
                     help="Comma-separated Availability Zones the launch may use (e.g. '1' or '1,2,3'). "
                          "Injected as the top-level 'zones' array. Omit = zone-agnostic (regional) "
@@ -132,6 +138,14 @@ def main():
     ap.add_argument("--compute-api-version", default="2024-07-01",
                     help="computeApiVersion stamped alongside extensions (only used with --extensions).")
     a = ap.parse_args()
+
+    # hyperVGenerations lives inside vmAttributes, which is mutually exclusive
+    # with the pinned vmSizesProfile -- so it only has effect on the attribute path.
+    # Fail loudly rather than silently ignoring it on a pinned --size/--sizes launch.
+    if a.hyperv_generations and not a.use_attributes:
+        raise SystemExit("--hyperv-generations only applies with --use-attributes "
+                         "(hyperVGenerations is a vmAttributes field). For a pinned --size/--sizes "
+                         "launch, pick Gen2-capable SKUs and a Gen2 image instead.")
 
     # --- Image: Marketplace URN OR a full image resource ID -----------------
     plan_ref = None
@@ -313,6 +327,16 @@ def main():
         if a.exclude_sizes:
             body["properties"]["vmAttributes"]["excludedVMSizes"] = \
                 [s.strip() for s in a.exclude_sizes.split(",")]
+        # Optional: restrict the basket to specific Hyper-V generations (Gen1/Gen2).
+        # Filters SKUs to those supporting the listed generation(s); the booted
+        # generation is set by the image, so pair 'Gen2' here with a Gen2 image to
+        # launch Gen2 VMs without the platform picking a Gen1-only SKU.
+        if a.hyperv_generations:
+            gens = [g.strip() for g in a.hyperv_generations.split(",") if g.strip()]
+            bad = [g for g in gens if g not in ("Gen1", "Gen2")]
+            if bad:
+                raise SystemExit(f"--hyperv-generations must be Gen1 and/or Gen2 (got {bad}).")
+            body["properties"]["vmAttributes"]["hyperVGenerations"] = gens
 
     # Optional Marketplace plan (required by some images, e.g. Flatcar). Plan is a
     # top-level sibling of 'properties' on the bulk resource (ResourcePlanProperty).

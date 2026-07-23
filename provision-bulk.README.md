@@ -104,6 +104,13 @@ python3 provision-bulk.py --use-attributes \
     --min-vcpu 2 --max-vcpu 4 --min-mem-gib 4 --max-mem-gib 16 \
     --exclude-sizes Standard_L64s_v3,Standard_L80s_v3
 
+# Attribute-based selection restricted to Gen2-capable SKUs. Pair with a Gen2
+# image -- this filters the SKU basket to those that SUPPORT Gen2 (excluding the
+# legacy Gen1-only sizes); the generation actually booted is set by the image:
+python3 provision-bulk.py --use-attributes \
+    --min-vcpu 2 --max-vcpu 4 --min-mem-gib 4 --max-mem-gib 16 \
+    --hyperv-generations Gen2 --image "RedHat:RHEL:810-gen2:latest"
+
 # Marketplace image that needs plan/terms acceptance (e.g. Flatcar)
 python3 provision-bulk.py --image "kinvolk:flatcar-container-linux-free:stable-gen2:latest" --use-plan
 
@@ -171,6 +178,7 @@ python3 provision-bulk.py --custom-data customdata-fluentbit.yaml \
 | `--min-mem-gib` / `--max-mem-gib` | `4` / `16` | Memory range in GiB (attribute mode) |
 | `--arch` | `X64` | Architecture type (attribute mode) |
 | `--exclude-sizes` | — | Comma-separated SKUs to drop from the attribute basket (only with `--use-attributes`) |
+| `--hyperv-generations` | — | Comma-separated Hyper-V generations (`Gen1` and/or `Gen2`) to filter the attribute basket to, stamped at `vmAttributes.hyperVGenerations`. Only valid with `--use-attributes` (fails loudly otherwise). Filters SKUs to those that **support** the generation — the booted generation is set by the image, so pair `Gen2` with a Gen2 image. Not available on the pinned `--size`/`--sizes` path |
 | `--zones` | — | Comma-separated Availability Zones the launch may use (e.g. `1` or `1,2,3`), stamped as the top-level `zones` array. Omit = zone-agnostic (regional) placement. Pair with `--zone-strategy` |
 | `--zone-strategy` | — | Zone distribution (`properties.zoneAllocationPolicy.distributionStrategy`): `BestEffortSingleZone` (one zone, spill only if capacity-short — the co-location vs Spot-fill compromise), `Prioritized` (fill higher-ranked zones first; needs `--zone-preferences`), `BestEffortBalanced` / `StrictBalanced` (spread across zones). All are best-effort against Spot capacity |
 | `--zone-preferences` | — | For `--zone-strategy Prioritized`: comma-separated `zone:rank` pairs, lower rank = higher priority (e.g. `1:0,2:1,3:2`) |
